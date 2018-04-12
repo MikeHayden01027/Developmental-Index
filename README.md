@@ -70,7 +70,7 @@ This repository describes data collection (format, storage,and QAQC), methods an
 
 
 
-### **Young of Year Study Streams** <a name="paragraph1"></a>
+### Young Year Study Streams
 
 
 
