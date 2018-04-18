@@ -1,0 +1,101 @@
+---
+title: "YoungOfYearDevelopment"
+author: "Michael Hayden"
+date: "3/5/2018"
+output: html_document
+---
+
+
+
+### Load Packages
+```{r}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(here))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tidyr))
+```
+
+
+
+### Load Data
+```{r}
+
+#----------------------------
+# Load in developmental index
+#----------------------------
+
+bktDevelIndexRaw <- read.csv(here::here(  "DataIn" , "DevelopmentalRate" , "BKTGrowth.csv"))
+
+#------------------------------------
+# Load in stream temperature database
+#------------------------------------
+
+tempRaw <-read.csv(here::here( "DataIn" , "Temperature" , "Water" , "ProcessedTempData" , "meanDailyWaterTemp.csv"))
+
+```
+
+
+
+### Modify Data
+```{r}
+
+#---------------------------------------------------------------------------------------
+# Change developmental index from wide to long fomat to join to temperature database.
+#---------------------------------------------------------------------------------------
+
+bktDevelIndexMod1 <- bktDevelIndexRaw  %>% gather('Temp') 
+
+names(bktDevelIndexMod1) <- c("Temp" , "pointTemp" , "rate")
+
+bktDevelIndexFinal <- bktDevelIndexMod1 %>% dplyr::mutate(temp2 = ifelse(pointTemp == 'X0' , '0' ,
+                                                                 ifelse(pointTemp == 'X0.1' , '0.1' ,
+                                                                 ifelse(pointTemp == 'X0.2' , '0.2' ,
+                                                                 ifelse(pointTemp == 'X0.3' , '0.3' ,
+                                                                 ifelse(pointTemp == 'X0.4' , '0.4' ,
+                                                                 ifelse(pointTemp == 'X0.5' , '0.5' ,
+                                                                 ifelse(pointTemp == 'X0.6' , '0.6' ,
+                                                                 ifelse(pointTemp == 'X0.7' , '0.7' ,
+                                                                 ifelse(pointTemp == 'X0.8' , '0.8' ,
+                                                                 ifelse(pointTemp == 'X0.9' , '0.9' , '5')))))))))),
+                                                           temp2 = as.numeric(temp2),
+                                                           temp = temp2 + Temp ) %>%
+                                            dplyr::select(temp , rate)
+
+#--------------------------------------------------------------------
+# Modify raw temperature data and left join it to developmental Index
+#--------------------------------------------------------------------
+
+tempMod <- tempRaw %>% dplyr::mutate(meanWaterTempFar = ((meanWaterTemp * (9/5)) + 32) ,
+                                    temp = round(meanWaterTempFar , 1),
+                                    spawnYear = ifelse(haydenDay > 274 & haydenDay < 580 , 2013 ,
+                                                ifelse(haydenDay > 580 & haydenDay < 980 , 2014 ,
+                                                ifelse(haydenDay > 980 & haydenDay < 1340 , 2015 ,
+                                                ifelse(haydenDay > 1340 & haydenDay < 1700 , 2016 ,
+                                                ifelse(haydenDay > 1700 & haydenDay < 1882 , 2017 , 2000)))))) %>%
+                       dplyr::left_join(bktDevelIndexFinal , by = c('temp' = 'temp' ))
+                  
+```
+
+
+### Graph Results
+```{r}
+
+#--------------------------------------------------
+# Extract 2016 data for Pond, Roaring and Four Mile
+#--------------------------------------------------
+
+filteredData <- tempMod %>% dplyr::filter(river %in% c( 'pond' , 'roaring' , 'four mile') , spawnYear == 2016  ) %>%
+                            dplyr::group_by(river) %>%
+                            dplyr::mutate(percentDevelop = cumsum(rate) ,
+                                          detectionDate = as.Date(detectionDate))
+#--------------------
+# Plot extracted Data
+#--------------------
+
+filteredData %>% ggplot(aes(x = detectionDate , y = percentDevelop , colour = river)) + geom_line(size = 2)
+```
+
+

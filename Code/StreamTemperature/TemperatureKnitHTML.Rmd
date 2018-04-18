@@ -1,0 +1,131 @@
+---
+title: ' Stream Temperature Plots'
+author: "Michael Hayden"
+date: "July 18, 2016"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, warning=FALSE, message=FALSE,echo=FALSE, include=FALSE}
+library(ggplot2)
+library(dplyr)
+setwd('~/Documents/Masters Project/Young of Year Size Distribution/BrookTroutYongOfYearSizeDistribution/Data In/TemperatureData/R_Output')
+MasterTemp <- read.csv('MasterTemp.csv', header=TRUE) %>%
+      mutate(Year=factor(Year))
+SummarisedMasterTemp <- read.csv("SummarisedMasterTemp.csv", header=TRUE)%>%
+      mutate(Year=factor(Year),
+             Month=factor(Month))
+DegreeDaysbyStream <- read.csv("DegreeDaysbyStream.csv", header=TRUE)%>%
+      mutate(Year=factor(Year))
+DegreeDaybyYear <- read.csv("DegreeDaybyYear.csv", header=TRUE) %>%
+      mutate(Year=factor(Year))
+DevelopmentalDegreeDays <- read.csv("DevelopmentalDegreeDays.csv", header = TRUE)
+```
+
+ 
+## All Temperature Data Overview  
+
+```{r, include=FALSE}
+SummarisedMasterTemp %>%
+     ggplot( aes(y=MeanTemp, x=DOY, colour=Stream))+ 
+              geom_line()
+```
+
+## Temperature Data Violin Plot 2014
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+SummarisedMasterTemp %>%
+     filter(Year==2014)%>%
+     ggplot(aes(y=MeanTemp, x=Month, fill=Stream)) +
+     geom_violin()+
+     facet_wrap(~Stream)
+```
+\
+\
+\
+
+
+Header
+------
+\
+\
+\
+
+
+Header
+======
+\
+\
+\
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+SummarisedMasterTemp %>%
+     filter(Year==2015)%>%
+     ggplot(aes(y=MeanTemp, x=Month, fill=Stream)) +
+     geom_violin()+
+     facet_wrap(~Stream)
+```
+
+## Temperatue Data Violin Plot 2016
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+SummarisedMasterTemp %>%
+     filter(Year==2016)%>%
+     ggplot(aes(y=MeanTemp, x=Month, fill=Stream)) +
+     geom_violin()+
+     facet_wrap(~Stream)
+```
+
+
+## Developmental Degree Days All By Year
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DevelopmentalDegreeDays %>%
+       mutate(Date = as.POSIXct(strptime(Date, format = "%Y-%m-%d")))%>%
+       ggplot(aes(y=DegreeDay, x=Date, color=Stream))+ 
+         geom_point(size=2)+
+         ylab("Degree Days(Degrees C)")+
+         ylim(0,1000)
+```
+
+## Developmental Degree Days 2014
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DevelopmentalDegreeDays %>%
+       mutate(Date = as.POSIXct(strptime(Date, format = "%Y-%m-%d")))%>%
+       filter(SamplingYear==2014) %>%
+       ggplot(aes(y=DegreeDay, x=Date, color=Stream))+ 
+         geom_line(size=2)+
+         ylab("Degree Days (Degrees C)")+
+         ylim(0,1000)
+```
+
+## Developmental Degree Days 2015
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DevelopmentalDegreeDays %>%
+       mutate(Date = as.POSIXct(strptime(Date, format = "%Y-%m-%d")))%>%
+       filter(SamplingYear==2015) %>%
+       ggplot(aes(y=DegreeDay, x=Date, color=Stream))+ 
+         geom_line()+
+         ylab("Degree Days (Degrees C)")+
+         ylim(0,1000)
+
+```
+
+## Developmental Degree Days 2016
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DevelopmentalDegreeDays %>%
+       mutate(Date = as.POSIXct(strptime(Date, format = "%Y-%m-%d")))%>%
+       filter(SamplingYear==2016) %>%
+       ggplot(aes(y=DegreeDay, x=Date, color=Stream))+ 
+         geom_line(Size=5)+
+         ylab("Degree Days (Degrees C)")+
+         ylim(0,1000)
+```
+
+## Developmental Degree Days 2017
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+DevelopmentalDegreeDays %>%
+       mutate(Date = as.POSIXct(strptime(Date, format = "%Y-%m-%d")))%>%
+       filter(SamplingYear==2017) %>%
+       ggplot(aes(y=DegreeDay, x=Date, color=Stream))+ 
+         geom_line()+
+         ylab("Degree Days (Degrees C)")+
+         ylim(0,1000)
+```

@@ -1,0 +1,452 @@
+---
+title: "Temperature Processing"
+author: "Michael Hayden"
+date: "1/26/2017"
+output: html_document
+---
+
+
+
+### Load  Packages
+```{r , echo=FALSE, warning=FALSE, message=FALSE}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tidyr))
+```
+
+
+
+### Load Data Functions
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+tempFunction <- function(dat, river , location , site){
+                list.files(path = dat , full.names = TRUE) %>%
+                lapply( read.csv ) %>%
+                bind_rows() %>%
+                dplyr::filter(Temp < 22 & Temp > -1) %>%
+                dplyr::mutate(river = as.factor(river),
+                              waterTemp = round(Temp , digits = 2 ) , 
+                              location = location,
+                              site = site, 
+                              detectionDate = as.Date(mdy_hm(Date)),
+                              year = as.factor(year(detectionDate)),
+                              dayOfYear = yday(detectionDate),
+                              month = month(detectionDate),
+                              week = week(detectionDate), 
+                              season = ifelse(dayOfYear < 80 , 1 ,
+                                       ifelse(dayOfYear < 172 , 2 ,
+                                       ifelse(dayOfYear < 264 , 3 , 
+                                       ifelse(dayOfYear < 360 ,4 , 4 )))),
+                              troutSeason = ifelse (dayOfYear < 50 , 1 ,
+                                            ifelse( dayOfYear < 355 , 2 , 1)),
+                              addition = ifelse(year == 2013 , 0 ,
+                                         ifelse(year == 2014 , 365 ,
+                                         ifelse(year == 2015 , 730 ,
+                                         ifelse(year == 2016 , 1095 ,
+                                         ifelse(year == 2017 , 1460 , 1)))))) %>%
+                  dplyr::select(river , location , site ,  waterTemp , detectionDate , year , month , dayOfYear , season , troutSeason , addition)}
+```
+
+
+
+### Temperature Data Processing Functions
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#-----------------------
+# Degree Day Calculation 
+#-----------------------
+
+DegreeDays <- function(dat , statD , endD , Year ){
+              dplyr::select( dat, river , location , site  , detectionDate , meanWaterTemp , dayOfYear)%>%
+              dplyr::filter(detectionDate >= statD & detectionDate <= endD) %>%
+              dplyr::group_by(river , location , site ) %>%
+              dplyr::arrange(detectionDate) %>%
+              dplyr::mutate(degreeDay = round(cumsum(meanWaterTemp), digits = 1) ,
+                            samplingYear = (Year))}
+
+#------------------------------------------------------------
+# Maximum Degree Day Calculation For Each Possible Spawn Date 
+#------------------------------------------------------------
+
+DegreeDayMax <- function( data){
+            datA <-  filter( meanDailyWaterTemp , site == data$site ) 
+             lIst <- list()
+              ii <- 0
+            for(i in data$start:data$end){
+              #print(i) 
+              ii <- ii + 1
+              lIst[[ii]] <- datA %>% dplyr::filter(haydenDay >= i , haydenDay <= data$haydenDay) %>%
+                                     dplyr::group_by(site) %>%
+                                     dplyr::mutate(degreeDay = cumsum(meanWaterTemp)) %>% 
+                                     dplyr::group_by(site) %>%
+                                     dplyr::summarise(degreeDayMax = max(degreeDay)) %>% 
+                                     dplyr::select(degreeDayMax)}
+            datA <- unlist(lIst) %>%
+                    as.data.frame() %>%
+                    dplyr::rename(maxDegreeDay ='.' ) %>%
+                    dplyr::mutate(site = data$site ,
+                                  haydenDay = data$start:data$end ,
+                                  event = data$event, 
+                                  spawnYear = data$spawnYear ,
+                                  dayOfYear = ifelse(spawnYear == 2013 , haydenDay ,
+                                              ifelse(spawnYear == 2014 , haydenDay - (365 * 1) ,
+                                              ifelse(spawnYear == 2015 , haydenDay - (365 * 2) ,
+                                              ifelse(spawnYear == 2016 , haydenDay - (365 * 3) , 
+                                              ifelse(spawnYear == 2017 , haydenDay - (365 * 4) , 0))))),
+                                  dayOfYear = ifelse(spawnYear == 2013 , haydenDay ,
+                                              ifelse(spawnYear == 2014 , haydenDay - (365 * 1) ,
+                                              ifelse(spawnYear == 2015 , haydenDay - (365 * 2) ,
+                                              ifelse(spawnYear == 2016 , haydenDay - (365 * 3) , 
+                                              ifelse(spawnYear == 2017 , haydenDay - (365 * 4) , 0))))),
+                                  samplingYear = data$spawnYear + 1,
+                                  detectionDate = as.Date(strptime(paste(spawnYear, dayOfYear), format="%Y %j")))}
+
+
+tempIncrease <- function(data) {
+                  tempChange <- seq(-1.7 , 1.7 , by = 0.01)   
+                  filteredTemp <- meanDailyWaterTemp %>% dplyr::filter( site == data$site , haydenDay >= data$spawnDateDOY & haydenDay <= data$haydenDay )  %>%
+                                                         dplyr::select(river , location , site , detectionDate , year , meanWaterTemp)
+                  lIsttt <- list()
+                      ii <- 0
+                 for(i in tempChange) {
+                     ii <- ii + 1
+                     lIsttt[[ii]] <- filteredTemp %>% dplyr::mutate(tempIncrease = meanWaterTemp + i ,
+                                                                    changeTemp = i) %>%
+                                                      dplyr::group_by(site) %>% 
+                                                      dplyr::mutate(degreeDayPlus = cumsum(tempIncrease)) %>%
+                                                      dplyr::group_by(site) %>%
+                                                      dplyr::summarise(maxDegreeDay = max(degreeDayPlus) ,
+                                                                       changeTemp = mean(changeTemp))  } 
+       
+                                    rbindlist(lIsttt , idcol = "index") %>%
+                                    dplyr::mutate(event = data$event ,
+                                                  startHaydenDay = data$spawnDateDOY ,
+                                                  endHaydenDay = data$haydenDay , 
+                                                  spawnYear = data$spawnYear , 
+                                                  samplingYear = (data$spawnYear + 1))}
+
+
+dateDegreeDay <- function(dAta , dATa , siteOne , yearOne){
+                   startDD <- dATa %>% dplyr::filter(site == siteOne , year == yearOne , event == "emergenceStart") %>% select(degreeDay)
+                   middleDD <- dATa %>% dplyr::filter(site == siteOne , year == yearOne , event == "emergenceMiddle") %>% select(degreeDay)
+                   endDD <- dATa %>% dplyr::filter(site == siteOne , year == yearOne , event == "emergenceEnd") %>% select(degreeDay)
+ 
+                   xxS <- function(data){  data %>% dplyr::filter(abs(maxDegreeDay - startDD$degreeDay) == min(abs(maxDegreeDay - startDD$degreeDay))) } 
+                   xxM <- function(data){  data %>% dplyr::filter(abs(maxDegreeDay - middleDD$degreeDay) == min(abs(maxDegreeDay - middleDD$degreeDay))) }
+                   xxE <- function(data){  data %>% dplyr::filter(abs(maxDegreeDay - endDD$degreeDay) == min(abs(maxDegreeDay - endDD$degreeDay))) }  
+
+      bind_rows(
+       (dAta %>% dplyr::filter(samplingYear == yearOne, event == "emergenceStart") %>% 
+                 dplyr::group_by(site , event , samplingYear) %>% 
+                 dplyr:: nest() %>%
+                 dplyr::mutate(new = map(data , xxS )) %>%
+                 dplyr::unnest(new)),
+       
+       (dAta %>% dplyr::filter(samplingYear == yearOne, event == "emergenceMiddle") %>% 
+                 dplyr::dplyr::group_by(site , event , samplingYear) %>% 
+                 dplyr::nest()  %>%
+                 dplyr::mutate(new = map(data , xxM )) %>%
+                 dplyr::unnest(new)),
+       
+      (dAta %>% dplyr::filter(samplingYear == yearOne , event == "emergenceEnd") %>% 
+                dplyr::group_by(site , event , samplingYear) %>% nest()  %>%
+                dplyr::mutate(new = map(data , xxE ))  %>%
+                dplyr::unnest(new))) %>% 
+                dplyr::mutate(calSite = siteOne) %>%
+                dplyr::select(site , event , samplingYear , maxDegreeDay , haydenDay , spawnYear , dayOfYear , detectionDate , calSite)}
+
+tempDegreeDay <- function(dAta , dATa , siteOne , yearOne){
+                   startDD <- dATa %>% dplyr::filter(site == siteOne , year == yearOne , event == "emergenceStart") %>% select(degreeDay)
+                   middleDD <- dATa %>% dplyr::filter(site == siteOne , year == yearOne , event == "emergenceMiddle") %>% select(degreeDay)
+                   endDD <- dATa %>% dplyr::filter(site == siteOne , year == yearOne , event == "emergenceEnd") %>% select(degreeDay)
+ 
+                   xxS <- function(data){  data %>% dplyr::filter(abs(maxDegreeDay - startDD$degreeDay) == min(abs(maxDegreeDay - startDD$degreeDay))) } 
+                   xxM <- function(data){  data %>% dplyr::filter(abs(maxDegreeDay - middleDD$degreeDay) == min(abs(maxDegreeDay - middleDD$degreeDay))) }
+                   xxE <- function(data){  data %>% dplyr::filter(abs(maxDegreeDay - endDD$degreeDay) == min(abs(maxDegreeDay - endDD$degreeDay))) }  
+
+      bind_rows(
+       (dAta %>% dplyr::filter(samplingYear == yearOne, event == "emergenceStart") %>% 
+                 dplyr::group_by(site , event , samplingYear) %>% 
+                 dplyr::nest() %>%
+                 dplyr::mutate(new = map(data , xxS )) %>%
+                 dplyr::unnest(new)),
+       (dAta %>% dplyr::filter(samplingYear == yearOne, event == "emergenceMiddle") %>% 
+                 dplyr::group_by(site , event , samplingYear) %>% 
+                 dplyr::nest()  %>%
+                 dplyr::mutate(new = map(data , xxM )) %>%
+                         unnest(new)),
+      (dAta %>% dplyr::filter(samplingYear == yearOne , event == "emergenceEnd") %>% 
+                dplyr::group_by(site , event , samplingYear) %>% nest()  %>%
+                dplyr::mutate(new = map(data , xxE ))  %>%
+                dplyr::unnest(new))) %>% 
+                dplyr::mutate(calSite = siteOne) %>% 
+                dplyr::select(site , event , samplingYear , maxDegreeDay , changeTemp , startHaydenDay , endHaydenDay , spawnYear , calSite)}
+
+
+spawnDateLineUp <- function(site , year){
+                    lIst <- list()
+                    ii <- 0
+                  for(i in year){
+                    for(a in site){
+                      ii <- ii + 1
+                      lIst[[ii]] <- dateDegreeDay(maxDegreeDayDate , emergenceDates , a ,i)}}
+                  as.data.frame(bind_rows(lIst)) 
+                 
+
+spawnTempLineUp <- function(site , year){
+                    lIst <- list()
+                    ii <- 0
+                  for(i in year){
+                    for(a in site){
+                      ii <- ii + 1
+                      lIst[[ii]] <- tempDegreeDay( maxDegreeDayTemp , emergenceDates , a ,i)}}
+                  as.data.frame(bind_rows(lIst)) 
+                 
+}
+
+
+```
+
+
+
+### Load Data and Join Data Frames Togeather
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#------------------------------------
+# Load and Modify Raw Water Temperaure Data 
+#------------------------------------
+
+masterWaterTemp<-bind_rows(tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Obear_Temp_Data" , "Below_Webber_Rd_Temp_Data"), "burying ground" , "below webber road" , "burying ground") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Obear_Temp_Data" , "Above_Webber_Rd_Temp_Data"), "burying ground", "above webber road" , "above webber road"),
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Obear_Temp_Data" , "Above_Webber_Rd_Temp_Data"), "burying ground", "above webber road" , "above webber road") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Obear_Temp_Data" , "Middle_Fork_Temp_Data") , "burying ground" , "middle fork" , "middle fork") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Obear_Temp_Data" , "North_Fork_Temp_Data") , "burying ground" , "north fork" , "north fork") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Obear_Temp_Data" , "South_Fork_Temp_Data") , "burying ground" , "south fork" , "south fork") , 
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Cronin_RaceWay") , 'cronin' , 'raceway' , 'cronin'),
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Four_Mile_Temp_Data") , "four mile" , "lower" , "four mile") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Pond_Brook_Temp_Data") , "pond" , "lower" , "pond") , 
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Roaring_Brook_Temp_Data" ) , "roaring" , "lower" , "roaring" ), 
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Sanderson_Temp_Data" , "Lower_Sanderson_Temp_Data" ), "sanderson", "lower" , "sanderson") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Sanderson_Temp_Data" , "Middle_Sanderson_Temp_Data" ) , "sanderson", "middle" , "sanderson upper") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Sanderson_Temp_Data" , "Upper_Sanderson_Temp_Data" ), "sanderson", "upper" , "sanderson middle") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "Sanderson_Temp_Data" , "HaydenMiddle_Sanderson_Temp_Data" ), "sanderson", "upper" , "middle sanderson study site"),
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "West_Whately_Temp_Data" ) , "west whately" , "lower" , "west whately") ,
+                           tempFunction( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "West_Brook_Temp_Data/West_Brook_Duda" ) , "west brook" , "section thirty" , "west brook")) 
+
+#------------------------------
+# Save modified Temperaure Data 
+#------------------------------
+
+setwd( here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" ,  "ProcessedTempData"))
+save(masterWaterTemp , file = "masterWaterTemp.RData")
+
+```
+
+
+
+### Load Day Met Temperature Data
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#---------------------------------
+# Load and Modify Raw DayMet Data 
+#---------------------------------
+
+setwd(here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Air"))
+dayMet <- bind_rows((read.csv('Burying_Ground_DayMet_A_1Janruary2012_to_31December2016.csv' , header = TRUE) %>% 
+                     dplyr::mutate(river = "burying ground" )),
+                    (read.csv('Four_Mile_DayMet_A_1Janruary2012_to_31December2016.csv' , header = TRUE) %>% 
+                     dplyr::mutate(river = "four mile")),
+                    (read.csv('Pond_Brook_DayMet_B_1January2012_to_31December2016.csv' , header = TRUE) %>% 
+                     dplyr::mutate(river = "pond" )),
+                    (read.csv('Roaring_A_1Janruary2012_to_31December2016.csv' , header = TRUE) %>% 
+                     dplyr::mutate(river = "roaring" )),
+                    (read.csv('Sanderson_A_1Janruary2012_to_31December2016.csv' , header = TRUE) %>% 
+                     dplyr::mutate(river = "sanderson" )),
+                    (read.csv('West_Whately_DayMet_A_1Janruary2012_to_31December2016.csv' , header = TRUE) %>% 
+                     dplyr::mutate(river = "west whately" ))) %>%
+                    
+          dplyr::select(river , year , yday , prcp..mm.day. , tmax..deg.c. , tmin..deg.c. ) %>%
+          dplyr::rename(dayOfYear = yday , percipitation_mm = prcp..mm.day. , maxAirTemp = tmax..deg.c. , minAirTemp = tmin..deg.c. ) %>%
+          dplyr::mutate(meanAirTemp = ((maxAirTemp + minAirTemp)/2) ,
+                        year = as.factor(year),
+                        detectionDate = as.Date(strptime(paste(year, dayOfYear), format="%Y %j")))
+```
+
+
+
+### Calculate Mean Daily Water Temperatures
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#----------------------------------------
+# Calculate Mean Daily Water Temperatures 
+#----------------------------------------
+
+meanDailyWaterTemp<- masterWaterTemp %>% 
+                      dplyr::group_by( river , location , site , detectionDate ,  troutSeason  , addition , year) %>% 
+                      dplyr::summarise_each (funs (mean), meanWaterTemp = waterTemp ) %>%
+                      dplyr::mutate(dayOfYear = yday(detectionDate) ,
+                                    meanWaterTemp = round(meanWaterTemp , digits = 2) , 
+                                    haydenDay = ifelse(year == 2013 , dayOfYear ,
+                                                ifelse(year == 2014 , dayOfYear  + 365 ,
+                                                ifelse(year == 2015 , dayOfYear  + (365 * 2) ,
+                                                ifelse(year == 2016 , dayOfYear + (365 * 3) ,
+                                                ifelse(year == 2017 , dayOfYear + (365 * 4) ,
+                                                ifelse(year == 2018 , dayOfYear + (365 *5 ) , 0))))))) %>%
+                      dplyr::left_join(dayMet , by = c("river" = "river" , "detectionDate" = "detectionDate" , "year" = "year" , "dayOfYear" = "dayOfYear"))
+
+#--------------------------------
+# Save Mean Daily Temperaure Data 
+#--------------------------------
+
+setwd(here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "ProcessedTempData"))
+write.csv(meanDailyWaterTemp , file = "meanDailyWaterTemp.csv")
+```
+
+
+
+### Calculate Cumulative Degree Days
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#----------------------------------------
+# Calculate Mean Daily Water Temperatures 
+#----------------------------------------
+
+tempData <-  bind_rows(DegreeDays(meanDailyWaterTemp , "2013-10-20" , "2014-10-19" , 2014) ,
+                       DegreeDays(meanDailyWaterTemp , "2014-10-20" , "2015-10-19" , 2015) ,
+                       DegreeDays(meanDailyWaterTemp , "2015-10-20" , "2016-10-19" , 2016) ,
+                       DegreeDays(meanDailyWaterTemp , "2016-10-20" , "2017-10-19" , 2017) ,
+                       DegreeDays(meanDailyWaterTemp , "2017-10-20" , "2018-02-27" , 2018))  %>%
+             dplyr::select(river , location , site , detectionDate  ,  degreeDay ) %>%
+             dplyr::left_join(meanDailyWaterTemp , . ,   by = c("detectionDate" = "detectionDate" , "river" = "river" , "site" = "site" , "location" = "location" )) %>%
+             dplyr::mutate( samplingYear = ifelse(detectionDate > "2013-11-19" & detectionDate < "2014-11-20" , 2014,
+                                            ifelse(detectionDate > "2014-11-19" & detectionDate < "2015-11-20" , 2015,
+                                            ifelse(detectionDate > "2015-11-19" & detectionDate < "2016-11-20" , 2016,
+                                            ifelse(detectionDate > "2016-11-19" & detectionDate < "2017-11-20" , 2017,
+                                            ifelse(detectionDate > "2017-11-19" & detectionDate < "2018-02-27" , 2018,  2000))))))
+
+#--------------------------------
+# Save Mean Daily Temperaure Data 
+#--------------------------------
+
+setwd(here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "ProcessedTempData" , "masterDataFrames"))
+write.csv(tempData , file = "tempData.csv")
+
+```                   
+
+
+
+### Max Degree Day Calculations
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+emergenceDates <- read.csv(here("Fish" , "Data_Analysis_Fish" , "DataIn" , "FishSampling" , "Processed" , "Emergence" , "emergenceDates.csv") , header = TRUE)
+
+
+emergenceDatesMod <- emergenceDates %>% na.omit() %>%
+                                        dplyr::mutate(spawnDate = ifelse(year == 2014 , "2013-10-20" ,
+                                                                  ifelse(year == 2015 , "2014-10-20" ,
+                                                                  ifelse(year == 2016 , "2015-10-20" ,
+                                                                  ifelse(year == 2017 , "2016-10-20" , "1")))),
+                                                      spawnDate = as.Date(spawnDate) , 
+                                                      spawnYear = year - 1 , 
+                                                      spawnDateDOY = yday(spawnDate) , 
+                                                      spawnDateDOY = ifelse(year == 2014 , spawnDateDOY ,
+                                                                     ifelse(year == 2015 , (spawnDateDOY + 365*1) ,
+                                                                     ifelse(year == 2016 , (spawnDateDOY + 365*2) ,
+                                                                     ifelse(year == 2017 , (spawnDateDOY + 365*3) , "1")))),
+                                                      spawnDateDOY = as.numeric(spawnDateDOY),
+                                                      start = spawnDateDOY - 51 ,
+                                                      end = spawnDateDOY + 72,
+                                                      Event = event ,
+                                                      Year = year ,
+                                                      Site = site) 
+    
+maxDegreeDayDate <- emergenceDatesMod %>% dplyr::filter(Event %in% c("emergenceStart" , "emergenceMiddle" , "emergenceEnd") ) %>% 
+                                          dplyr::group_by(Site , Year , Event) %>% 
+                                          dplyr::nest() %>% 
+                                          dplyr::mutate(new = map(data , DegreeDayMax)) %>% 
+                                          dplyr::unnest(new)
+
+maxDegreeDayTemp <- emergenceDatesMod %>% dplyr::filter( Event %in% c("emergenceStart" , "emergenceMiddle" , "emergenceEnd")) %>% 
+                                          dplyr::group_by(Site , Year , Event) %>% 
+                                          dplyr::nest() %>% 
+                                          dplyr::mutate(new = map(data , tempIncrease)) %>% 
+                                          dplyr::unnest(new)
+
+setwd(here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "ProcessedTempData" , "degreeDayDateMax"))
+write.csv(maxDegreeDayDate , file = "maxDegreeDayDate.csv")
+
+setwd(here::here("Fish" , "Data_Analysis_Fish" , "DataIn" , "Temperature" , "Water" , "ProcessedTempData" , "tempDegreeDayMax"))
+write.csv(maxDegreeDayTemp , file = "maxDegreeDayTemp.csv")
+```
+
+
+
+### Match Degree Day Date Amoung Streams
+```{r}
+###Load Data
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/DataIn/Temperature/Water/ProcessedTempData/degreeDayDateMax')
+maxDegreeDay <- read.csv("maxDegreeDayDate.csv" , header = TRUE) 
+
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/DataIn/FishSampling')
+emergenceDates <- read.csv("emergenceDates.csv" , header = TRUE)
+
+
+calDegreeDayDate <- bind_rows((spawnDateLineUp((c( "four mile" , "pond" ,  "roaring" , "sanderson" , "west whately")) , (c("2014" , "2015" , "2016" , "2017")))),
+                              (spawnDateLineUp((c("burying ground")) , (c("2014" , "2015" , "2016"))))) %>%
+                    mutate(changeTemp = 0) %>%
+                    select(site , calSite , event , samplingYear , spawnYear , maxDegreeDay , changeTemp , detectionDate)
+
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/DataIn/Temperature/Water/ProcessedTempData/tempDegreeDayMax')
+tempDegreeDayMax <- read.csv("maxDegreeDayTemp.csv" , header = TRUE)
+
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/DataIn/FishSampling')
+emergenceDates <- read.csv("emergenceDates.csv" , header = TRUE)
+
+
+calDegreeDayTemp <- bind_rows((spawnTempLineUp((c( "four mile" , "pond" ,  "roaring" , "sanderson" , "west whately")) , (c("2014" , "2015" , "2016" , "2017")))),
+                              (spawnTempLineUp((c("burying ground")) , (c("2014" , "2015" , "2016"))))) %>%
+                    mutate(detectionDate = ifelse(spawnYear == 2013 , "2013-10-20" ,
+                                           ifelse(spawnYear == 2014 , "2014-10-20" ,
+                                           ifelse(spawnYear == 2015 , "2015-10-20" ,
+                                           ifelse(spawnYear == 2016 , "2016-10-20" , "1")))) ,
+                           detectionDate = as.Date(detectionDate)) %>%
+                    select(site , calSite , event , samplingYear , spawnYear , maxDegreeDay , changeTemp , detectionDate)
+
+calDegreeDay <- bind_rows(calDegreeDayDate , calDegreeDayTemp)  
+                   
+### Save Data
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/DataIn/Temperature/Water/ProcessedTempData/matchedDegreeDay')
+write.csv(calDegreeDayDate , file = "calDegreeDayDate.csv")
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/VariationInSpawningDate/B')
+save(calDegreeDayDate , file = "calDegreeDayDate.RData")
+
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/DataIn/Temperature/Water/ProcessedTempData/matchedDegreeDay')
+write.csv(calDegreeDayTemp , file = "calDegreeDayTemp.csv")
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSamplingDataAnalysis/VariationInSpawningDate/B')
+save(calDegreeDayTemp , file = "calDegreeDayTemp.RData")
+
+```
+
+
+
+### Match Degree Day Temp Amoung Sites
+```{r}
+calDegreeDay %>% filter(calSite %in% c("west whately") , site %in% c("burying ground" , "sanderson" , "west whately") ) %>%
+                 ggplot(aes(y = changeTemp , x = detectionDate , colour = event , size = spawnYear )) + 
+                   geom_point() +
+                   geom_smooth(method = lm) +
+                   facet_grid(~site)
+
+calDegreeDaym %>% ggvis(y=~ temp , x=~ detectionDate , fill =~ river  ) %>% 
+                    layer_points()
+```
+
+
+
+
+
+
+
+
