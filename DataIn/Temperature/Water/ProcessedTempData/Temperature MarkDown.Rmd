@@ -1,0 +1,109 @@
+---
+title: "Stream Temperature Graphs"
+author: "Michael Hayden"
+date: "7/7/2017"
+output: html_document
+---
+
+### Load Packages
+```{r setup , message=FALSE , echo= FALSE , warning=FALSE}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(lubridate))
+```
+
+### Load Data
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+setwd('/Users/michaeljames/Documents/MastersProject/FishSampling/FishSampling_R/DataIn/Temperature/ProcessedTempData')
+#masterTemp <- read.csv("masterTemp.csv" , header = TRUE) 
+tempData <- read.csv("tempData.csv" , header = TRUE) %>%
+            filter(year %in% (2015:2017) , site %in% c("Below Webber Road" , "Lower")) %>%
+            mutate(
+              detectionDate = ymd(detectionDate))
+```
+
+### Mean Temperature
+
+#### Daily Mean Temperature By River and Year
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(year %in% (2015:2017) , site %in% c("Below Webber Road" , "Lower")) %>%
+             ggplot(aes(y = meanTemp , x = dayOfYear , colour = river)) +
+              geom_point() +
+              labs(x = "Day Of the Year" , y = "Mean Temperature (Degrees C)" , col = "River") +
+              facet_grid(river~year)
+```
+
+#### Violin Daily Mean Temperature By River and Year
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% ggplot(aes(y = meanTemp , x = as.factor(month) , fill = as.factor(river))) +
+               geom_violin() +
+               labs(x = "Day Of the Year" , y = "Mean Temperature (Degrees C)" , fill = "River")+
+               facet_grid(river~year)
+```
+
+#### Spring Daily Mean Temperature By Year
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(year %in% (2015:2017) , dayOfYear < 200) %>%
+             ggplot(aes(y = meanTemp , x = dayOfYear , colour = river)) +
+              geom_point() +
+              labs(x = "Day Of the Year" , y = "Mean Temperature (Degrees C)" , col = "River") +
+              facet_wrap(~year)
+```
+
+#### Spring Daily Mean Temperature By River
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(dayOfYear %in% 50:200) %>% 
+             ggplot(aes( x = dayOfYear , y = meanTemp , colour = as.factor(year))) +
+               geom_line() +
+               labs(x = "Day Of the Year" , y = "Mean Temperature " , col = "River") +
+               facet_wrap(~river)
+```
+
+#### Spring Daily Mean Temperature By Year
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(dayOfYear %in% 50:200) %>% 
+             ggplot(aes( x = dayOfYear , y = meanTemp , colour = as.factor(river))) +
+               geom_line() +
+               labs(x = "Day Of the Year" , y = "Mean Temperature " , col = "River") +
+               facet_wrap(~year)
+```
+
+#### Spring Temperature Data by River and Year Violin
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>%  filter(dayOfYear %in% (0:200)) %>%
+              ggplot( aes( y = meanTemp , x = as.factor(month ))) + 
+                geom_violin() +
+                labs(x = "Day Of the Year" , y = "Mean Temperature (Degrees C)" , col = "River") +
+                facet_grid(year~river)
+```
+
+### Cumulitive Degree Days
+
+#### Degree Days Facet By Year
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(samplingYear %in% 2017 , dayOfYear < 150 , river %in% c("Sanderson" , "Sanderson Upper" , "Sanderson Middle"))%>%
+             ggplot(aes(y= degreeDay , x = dayOfYear , colour = as.factor(river))) +
+              geom_point(size = 0.5) + 
+              labs(x = "Day Of the Year" , y = "Cumulative Degree Days" , col = "River") 
+```
+
+#### Degree Days Facet by Stream
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(samplingYear %in% 2015:2017 , dayOfYear < 170) %>%
+               ggplot(aes(x = dayOfYear , y = degreeDay , colour = as.factor(year))) +
+                geom_point(size = 0.5) +
+                labs(x = "Day Of the Year" , y = "Cumulative Degree Days" , col = "River") +
+                facet_wrap(~river)
+```
+
+#### Cumulitive Degree Days Years
+```{r , message=FALSE , echo= FALSE , warning=FALSE}
+tempData %>% filter(samplingYear %in% 2015:2017) %>%
+              ggplot(aes(x = detectionDate , y = degreeDay , colour = as.factor(river))) + 
+               geom_point() + 
+               labs(x = "Day Of the Year" , y = "Cumulative Degree Days" , col = "River") +
+               scale_x_date(date_breaks = "3 month" , date_labels = "%Y-%m" ) +
+               theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
